@@ -1,5 +1,5 @@
-function [outputArg1,outputArg2] = simulation_comsol(velocity,mesh_size, radius, fluid_mu, ...
-    h0, impactor_E, poisson_ratio)
+function [outputArg1,outputArg2] = simulation_comsol(velocity,mesh_size, radius, impactor_density, sphere_nu, fluid_mu, fluid_density ...
+    h0, impactor_E, poisson_ratio, steps_before_impact)
 % Basic script to run an elastohydrodynamic simulation in comsol
 % A sphere is assigned initial velocity V at a distance h0 from a flat wall
 % 
@@ -40,39 +40,42 @@ model.title('Soft_sphere_impact_mediated_by_a_fluid');
 model.description('We try to capture the physics and the different regimes of a solid sphere impacting on a rigid surface with the presence of a fluid all around');
 
 
-model.modelPath(strcat(path,'\Automated_simulatons_lower_drop'));
+model.modelPath(strcat(path,'\Automated_simulatons'));
 name = strcat(stiffness, "_", strrep(velocity,'.','_'));
 
-model.param.set('fluid_density', '1.2 [kg/m^3]', 'density of the fluid');
-model.param.set('ball_density', impactor_density, 'density of the ball');
-model.param.set('velocity', strcat(velocity, '[m/s]'), 'initial velocity of impact');
-model.param.set('ball_radius', strcat(num2str(radius), '[m]'), 'radius of the ball');
-model.param.set('ball_E', impactor_E, 'young modulus of the ball');
-model.param.set('ball_nu', '0.47', 'poisson ratio of the ball (almost incompressible)');
+% Parameters of the simulation
+model.param.set('fluid_density', strcat(num2str(fluid_density), ' [kg/m^3]'), 'density of the fluid');
+model.param.set('sphere_density', strcat(num2str(impactor_density), ' [kg/m^3]'), 'density of the sphere');
+model.param.set('velocity', strcat(num2str(velocity), '[m/s]'), 'initial velocity of impact');
+model.param.set('sphere_radius', strcat(num2str(radius), '[m]'), 'radius of the ball');
+model.param.set('sphere_E', strcat(num2str(impactor_E), '[Pa]'), 'young modulus of the ball');
+model.param.set('sphere_nu', num2str(sphere_nu) , 'poisson ratio of the ball (almost incompressible)');
 model.param.set('fluid_mu', strcat(num2str(fluid_mu),'[Pa*s]'), 'fluid viscosity');
 model.param.set('mesh_size', strcat(num2str(mesh_size), '[m]'), 'minimum size of edge');
-model.param.set('delta', '(fluid_mu/(ball_density*velocity*ball_radius))^(1/3)', 'small parameter');
-model.param.set('height', 'ball_radius*delta^2', 'height at which the pressure makes a leading order contribution to the deformation');
-model.param.set('h0', '.625E-5 [m]', 'initial height at the start of the smulation (check 5 times is good enough)');
-model.param.set('length', 'ball_radius*delta', 'initial length of deformation in the radial direction');
-model.param.set('time_to_impact', 'h0/velocity', 'time it would take the ball to impact if there was no fluid cushioning');
+model.param.set('delta', '(12*fluid_mu/(sphere_density*velocity*sphere_radius))^(1/3)', 'small parameter inertial regime');
+model.param.set('height', 'sphere_radius*delta^2', 'height at which the pressure makes a leading order contribution to the deformation in inertial regime');
+model.param.set('h0', strcat(num2str(h0), ' [m]'), 'initial height at the start of the smulation (check 5 times is good enough)');
+model.param.set('length', 'sphere_radius*delta', 'horizontal scale in the radial direction');
+model.param.set('time_to_impact', strcat(num2str(h0), '/', num2str(velocity)), 'time it would take the ball to impact if there was no fluid cushioning');
 model.param.set('total_time', '20*time_to_impact', 'time of the simulation to capture dynamics till contact');
 % change to have good cfl if wave speed smaller than bc speed
 model.param.set('CFL', '0.1', 'CFL number to ensure time accuracy (stability is already provided by the implicit solver)');
 % if(Phi>1, CFL*mesh_size/(velocity/delta), CFL*mesh_size/shear_wave_speed)
-model.param.set('time_step', 'time_to_impact/7.5', 'time_to_impact/10');
-model.param.set('shear_modulus', 'ball_E/(2*(1+ball_nu))');
-model.param.set('shear_wave_speed', 'sqrt(shear_modulus/ball_density)*0.95');
+model.param.set('time_step', strcat('time_to_impact/', num2str(steps_before_impact)), 'time step as a function of time to contact');
+model.param.set('shear_modulus', 'sphere_E/(2*(1+sphere_nu))');
+model.param.set('shear_wave_speed', 'sqrt(shear_modulus/sphere_density)*0.95');
 model.param.set('ratio_impact_wave', 'velocity/shear_wave_speed');
-model.param.set('Phi', 'ratio_impact_wave/delta');
-model.param.set('pressure_scale', 'ball_density*velocity^2/delta'); %pressure scale from the scaling
+model.param.set('Phi', 'ratio_impact_wave/delta', 'value of the transtion parameter elastic to inertial');
+model.param.set('pressure_scale', 'sphere_density*velocity^2/delta'); %pressure scale from the scaling
 model.param.set('disp_scale', '0.02[mm]');
-model.param.set('h_center', 'ball_radius*delta^2');
-model.param.set('time_scale', 'delta^2');
-model.param.set('c_p', 'sqrt(ball_E/(3*(1-ball_nu)*ball_density))');
-model.param.set('phi2', 'velocity/(delta*c_p)');
+model.param.set('h_center', 'sphere_radius*delta^2', 'Height of dimple in the inertial regime');
+model.param.set('time_scale', 'delta^2', 'Time scale in the inertial regime');
+model.param.set('c_p', 'sqrt(sphere_E/(3*(1-sphere_nu)*sphere_density))', 'P-wave velocity in the impactor');
+model.param.set('psi', 'velocity/(delta*c_p)', );
 model.param.set('vertical_ref', vertical_ref, 'minimum size of edge');
 model.param.set('radial_ref', radial_ref, 'minimum size of edge');
+
+% Geometry
 
 comp1 = model.component.create('comp1', true);
 
@@ -85,9 +88,9 @@ geom1.axisymmetric(true);
 geom1.label('Ball');
 geom1.lengthUnit('mm');
 geom1.create('c1', 'Circle');
-geom1.feature('c1').set('pos', {'0' 'h0+ball_radius'});
+geom1.feature('c1').set('pos', {'0' 'h0+sphere_radius'});
 geom1.feature('c1').set('rot', 270);
-geom1.feature('c1').set('r', 'ball_radius');
+geom1.feature('c1').set('r', 'sphere_radius');
 geom1.feature('c1').set('angle', 180);
 geom1.create('pare1', 'PartitionEdges');
 geom1.feature('pare1').setIndex('param', num2str(radial_ref), 0);
@@ -101,19 +104,19 @@ geom1.run;
 model.view.create('view2', 3);
 model.view.create('view3', 3);
 
-%define minimum over the leading edge operator
+% Define minimum over the leading edge operator
 min_op1 = comp1.cpl.create('minop1', 'Minimum');
 min_op1.selection.geom('geom1', 1);
 comp1.cpl('minop1').selection.set([4]);
 
-%Defining the physics, solid and fluid mechanics
+% Defining the physics, solid and fluid mechanics
 solid = comp1.physics.create('solid', 'SolidMechanics', 'geom1');
 solid.create('bndl1', 'BoundaryLoad', 1);
 solid.feature('bndl1').selection.set([4 6]);
 film = comp1.physics.create('tffs', 'ThinFilmFlowEdge', 'geom1');
 film.selection.set([4 6]);
 
-%meshing
+% Meshing
 mesh1 = comp1.mesh.create('mesh1');
 mesh1.create('fq1', 'FreeQuad');
 quad_mesh = mesh1.feature('fq1');
@@ -126,33 +129,26 @@ quad_mesh.feature('dis2').selection.set([4]);
 mesh1.feature('size').set('hauto', 4);
 mesh1.feature('size').set('table', 'cfd');
 quad_mesh.feature('dis1').label('vertical_refinement');
-quad_mesh.feature('dis1').set('numelem', 'floor(ball_radius*vertical_ref/mesh_size)');
+quad_mesh.feature('dis1').set('numelem', 'floor(sphere_radius*vertical_ref/mesh_size)');
 quad_mesh.feature('dis2').label('radial_refinement');
-quad_mesh.feature('dis2').set('numelem', 'floor(3.14*ball_radius*(1-radial_ref)/(2*mesh_size))');
-% Generate mesh
-mesh1.run;
+quad_mesh.feature('dis2').set('numelem', 'floor(3.14*sphere_radius*(1-radial_ref)/(2*mesh_size))');
+mesh1.run; % Generate mesh
 
 model.result.table('tbl1').comments('Line Minimum 1');
 model.result.table('evl2').label('Evaluation 2D');
 model.result.table('evl2').comments('Interactive 2D values');
 
-%{
-comp1.view('view1').axis.set('xmin', -0.2765345871448517);
-comp1.view('view1').axis.set('xmax', 2.405282974243164);
-comp1.view('view1').axis.set('ymin', -0.6919764280319214);
-comp1.view('view1').axis.set('ymax', 0.5952959060668945);
-%}
 
-solid.prop('ShapeProperty').set('order_displacement', 2);
+solid.prop('ShapeProperty').set('order_displacement', 2); % quadratic interpolation for displacements
 solid.prop('EquationForm').set('form', 'Transient');
 %linear elasticity solid
 linear_elasticity = solid.feature('lemm1');
 linear_elasticity.set('E_mat', 'userdef');
-linear_elasticity.set('E', 'ball_E');
+linear_elasticity.set('E', 'sphere_E');
 linear_elasticity.set('nu_mat', 'userdef');
-linear_elasticity.set('nu', 'ball_nu');
+linear_elasticity.set('nu', 'sphere_nu');
 linear_elasticity.set('rho_mat', 'userdef');
-linear_elasticity.set('rho', 'ball_density');
+linear_elasticity.set('rho', 'sphere_density');
 %initial condition solid
 solid.feature('init1').set('ut', {'0'; '0'; '-velocity'});
 solid.feature('init1').label('Initial_velocity');
@@ -163,16 +159,15 @@ solid.feature('hmm1').label('Neo_hokean');
 solid.feature('hmm1').selection.set([1]);
 solid.feature('hmm1').set('IsotropicOption', 'Enu');
 solid.feature('hmm1').set('E_mat', 'userdef');
-solid.feature('hmm1').set('E', 'ball_E');
+solid.feature('hmm1').set('E', 'sphere_E');
 solid.feature('hmm1').set('nu_mat', 'userdef');
-solid.feature('hmm1').set('nu', 'ball_nu');
+solid.feature('hmm1').set('nu', 'sphere_nu');
 solid.feature('hmm1').set('rho_mat', 'userdef');
-solid.feature('hmm1').set('rho', 'ball_density');
+solid.feature('hmm1').set('rho', 'sphere_density');
 
 if neohookean == 0
-    solid.feature('hmm1').active(false);
+    solid.feature('hmm1').active(false); % deactivate neohookean model
 end
-% neo-hookean material model is deactivated
 
 % Fluid pressure BC on the solid
 solid.feature('bndl1').set('FperArea_src', 'root.comp1.tffs.fwallr');
@@ -181,7 +176,7 @@ solid.feature('bndl1').label('Fluid_pressure_acting_on_ball');
 film.prop('EquationForm').set('form', 'Transient');
 film.prop('ReferencePressure').set('pref', '0[atm]');
 thin_film = film.feature('ffp1');
-thin_film.set('hw1', 'ball_radius + h0 -sqrt(ball_radius^2- r^2)');
+thin_film.set('hw1', 'sphere_radius + h0 -sqrt(sphere_radius^2- r^2)');
 thin_film.set('TangentialWallVelocity', 'FromDeformation');
 thin_film.set('uw_src', 'root.comp1.u');
 thin_film.set('mure_mat', 'userdef');
@@ -189,6 +184,7 @@ thin_film.set('mure', 'fluid_mu');
 thin_film.set('rho_mat', 'userdef');
 thin_film.set('rho', 'fluid_density');
 
+% Study and solver
 study1 = model.study.create('std1');
 study1.create('time', 'Transient');
 
@@ -267,7 +263,7 @@ sol1.feature('t1').feature('st1').set('stopconddesc', {'Stop if times step is to
 sol1.feature('t1').feature('st1').set('stopcondarr', {'1/timestep > 1e12' 'comp1.minop1(root.z) < 1e-7 [m]'});
 sol1.feature('t1').feature('st1').set('storestopcondsol', 'stepafter');
 % Save file
-mphsave(model_name, strcat("\Automated_simulations_lower_drop\",name, "_ms.mph"))
+mphsave(model_name, strcat("\Automated_simulations\",name, "_ms.mph"))
 
 % Solve command
 sol1.runAll;
@@ -421,15 +417,6 @@ surf_plot.feature('surf3').set('const', {'solid.refpntr' '0' 'Reference point fo
 surf_plot.feature('surf3').set('resolution', 'normal');
 model.result.create('tip_profile19', 'PlotGroup3D');
 
-%{
-plot_3d = model.result().create('3D_plot', 'Volume');
-plot_3d.feature('vol1').set('expr', 'z');
-plot_3d.set('looplevel', [1]);
-plot_3d.set('frametype', 'spatial');
-plot_3d.feature('vol1').set('const', {'solid.refpntr' '0' 'Reference point for moment computation, r coordinate'; 'solid.refpntphi' '0' 'Reference point for moment computation, phi coordinate'; 'solid.refpntz' '0' 'Reference point for moment computation, z coordinate'});
-plot_3d.feature('vol1').set('resolution', 'normal');
-%}
-
 gif1 = model.result.export.create('anim1', 'Animation');
 gif2 = model.result.export.create('anim2', 'Animation');
 gif3 = model.result.export.create('anim3', 'Animation');
@@ -581,37 +568,7 @@ gif3.set('axes1d', 'on');
 gif3.set('axes2d', 'on');
 gif3.set('showgrid', 'off');
 
-%{
-gif4.set('plotgroup', 'tip_profile18');
-gif1.set('giffilename', strcat(data_path, 'pressure.gif'));
-gif4.set('solnumtype', 'inner');
-gif4.set('solnum', [1]);
-gif4.set('frametime', 0.3);
-gif4.set('synchronize', false);
-gif4.set('fontsize', '20');
-gif4.set('colortheme', 'globaltheme');
-gif4.set('customcolor', [1 1 1]);
-gif4.set('background', 'color');
-gif4.set('gltfincludelines', 'on');
-gif4.set('title1d', 'on');
-gif4.set('legend1d', 'on');
-gif4.set('logo1d', 'on');
-gif4.set('options1d', 'on');
-gif4.set('title2d', 'on');
-gif4.set('legend2d', 'on');
-gif4.set('logo2d', 'on');
-gif4.set('options2d', 'off');
-gif4.set('title3d', 'on');
-gif4.set('legend3d', 'on');
-gif4.set('logo3d', 'on');
-gif4.set('options3d', 'off');
-gif4.set('axisorientation', 'on');
-gif4.set('grid', 'on');
-gif4.set('axes1d', 'on');
-gif4.set('axes2d', 'on');
-gif4.set('showgrid', 'off');
-%}
-
+% exporting data for postprocessing
 count = 0;
 r_min = zeros(1,n_times);
 figure()
@@ -648,7 +605,7 @@ figure()
 plot(times,r_min)
 
 %Save file
-mphsave(model_name, strcat("\Automated_simulations_lower_drop\", name, "_ms.mph"))
+mphsave(model_name, strcat("\Automated_simulations\", name, "_ms.mph"))
 
 end
 
