@@ -1,6 +1,9 @@
 # Prerequisites
 *.d
 
+# Saving files
+*.asv
+
 # Object files
 *.o
 *.ko

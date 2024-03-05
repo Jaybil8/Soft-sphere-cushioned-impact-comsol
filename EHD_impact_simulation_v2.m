@@ -58,7 +58,7 @@ n_simulations_soft = length(vel_list_soft);
 for jj = [1,2]
     if jj == 1
         stiffness = 'Hard';
-        n_simulations = n_simulations_soft;
+        n_simulations = n_simulations_hard;
         vel_list = vel_list_soft;
     else
         stiffness = 'Soft';
@@ -336,7 +336,7 @@ sol1.feature('t1').feature('st1').set('stopcondterminateon', {'true' 'true'});
 sol1.feature('t1').feature('st1').set('stopcondActive', {'on' 'on'});
 sol1.feature('t1').feature('st1').set('stopconddesc', {'Stop if times step is too small' 'Stop if gap is smaller than 100nm'});
 sol1.feature('t1').feature('st1').set('stopcondarr', {'1/timestep > 1e12' 'comp1.minop1(root.z) < 1e-7 [m]'});
-
+sol1.feature('t1').feature('st1').set('storestopcondsol', 'stepafter');
 % Save file
 mphsave(model_name, strcat("\Automated_simulations_lower_drop\",name, "_ms.mph"))
 
