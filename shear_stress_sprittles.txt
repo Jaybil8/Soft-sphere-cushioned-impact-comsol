@@ -1,0 +1,8 @@
+Shear stress from sprittles
+tffs.h*dtang(tffs.p,r)/2+solid.u_tR*tffs.mure/tffs.h
+
+Pressure profile for the rigid sphere
+3*tffs.mure*ball_radius*velocity/(tffs.h+r^2/2*ball_radius)^2
+
+Hertz pressure (contact radius as final converged step)
+2*ball_E*(1/ball_radius)^.5/(3.14*(1-ball_nu)^2)*(1-(r/0.00073)^2)^.5
