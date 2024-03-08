@@ -1,5 +1,4 @@
-function [outputArg1,outputArg2] = simulation_comsol(velocity,mesh_size, radius, impactor_density, sphere_nu, fluid_mu, fluid_density ...
-    h0, impactor_E, poisson_ratio, steps_before_impact)
+function [outputArg1,outputArg2] = simulation_comsol(velocity,mesh_size, radius, rho_i, nu_i, mu_m, rho_m, h0, impactor_E, steps_before_impact)
 % Basic script to run an elastohydrodynamic simulation in comsol
 % A sphere is assigned initial velocity V at a distance h0 from a flat wall
 % 
@@ -15,18 +14,7 @@ radial_ref = 0.85;
 relative_tolerance = 1e-5;
 neohookean = 1; % 0 to deactivate neohookean model
 
-switch stiffness
-    case 'Soft'
-        impactor_density = '1140 [kg/m^3]';
-        impactor_E = '250 [kPa]';
-        c_s = 8.3;
-    case 'Hard'
-        impactor_density = '1140 [kg/m^3]';
-        impactor_E = '1100 [kPa]';
-        c_s = 17.5;
-    otherwise
-        error('Invalid value of the input. Run the program again')
-end
+stiffness = 'Soft';
 
 model_name = strcat('EHD_ball_impact_', stiffness, velocity, 'ms.mph');
 
@@ -41,39 +29,49 @@ model.description('We try to capture the physics and the different regimes of a 
 
 
 model.modelPath(strcat(path,'\Automated_simulatons'));
-name = strcat(stiffness, "_", strrep(velocity,'.','_'));
 
-% Parameters of the simulation
-model.param.set('fluid_density', strcat(num2str(fluid_density), ' [kg/m^3]'), 'density of the fluid');
-model.param.set('sphere_density', strcat(num2str(impactor_density), ' [kg/m^3]'), 'density of the sphere');
+name = strcat('velocity', strrep(num2str(velocity),'.','_'), '_mesh_size', num2str(mesh_size),'_nu_', num2str(nu_i), '_h0_', num2str(h0), '_E_', num2str(impactor_E), '_T_', num2str(steps_before_impact));
+%name = strcat(stiffness, "_", strrep(num2str(velocity),'.','_'));
+
+% Input Parameters of the simulation
+model.param.set('rho_m', strcat(num2str(rho_m), ' [kg/m^3]'), 'density of the fluid');
+model.param.set('rho_i', strcat(num2str(rho_i), ' [kg/m^3]'), 'density of the sphere');
 model.param.set('velocity', strcat(num2str(velocity), '[m/s]'), 'initial velocity of impact');
-model.param.set('sphere_radius', strcat(num2str(radius), '[m]'), 'radius of the ball');
+model.param.set('radius', strcat(num2str(radius), '[m]'), 'radius of the ball');
 model.param.set('sphere_E', strcat(num2str(impactor_E), '[Pa]'), 'young modulus of the ball');
-model.param.set('sphere_nu', num2str(sphere_nu) , 'poisson ratio of the ball (almost incompressible)');
-model.param.set('fluid_mu', strcat(num2str(fluid_mu),'[Pa*s]'), 'fluid viscosity');
+model.param.set('nu_i', num2str(nu_i) , 'poisson ratio of the ball (almost incompressible)');
+model.param.set('mu_m', strcat(num2str(mu_m),'[Pa*s]'), 'fluid viscosity');
 model.param.set('mesh_size', strcat(num2str(mesh_size), '[m]'), 'minimum size of edge');
-model.param.set('delta', '(12*fluid_mu/(sphere_density*velocity*sphere_radius))^(1/3)', 'small parameter inertial regime');
-model.param.set('height', 'sphere_radius*delta^2', 'height at which the pressure makes a leading order contribution to the deformation in inertial regime');
 model.param.set('h0', strcat(num2str(h0), ' [m]'), 'initial height at the start of the smulation (check 5 times is good enough)');
-model.param.set('length', 'sphere_radius*delta', 'horizontal scale in the radial direction');
-model.param.set('time_to_impact', strcat(num2str(h0), '/', num2str(velocity)), 'time it would take the ball to impact if there was no fluid cushioning');
+model.param.set('time_to_impact', 'h0/velocity', 'time it would take the ball to impact if there was no fluid cushioning');
 model.param.set('total_time', '20*time_to_impact', 'time of the simulation to capture dynamics till contact');
-% change to have good cfl if wave speed smaller than bc speed
-model.param.set('CFL', '0.1', 'CFL number to ensure time accuracy (stability is already provided by the implicit solver)');
-% if(Phi>1, CFL*mesh_size/(velocity/delta), CFL*mesh_size/shear_wave_speed)
 model.param.set('time_step', strcat('time_to_impact/', num2str(steps_before_impact)), 'time step as a function of time to contact');
-model.param.set('shear_modulus', 'sphere_E/(2*(1+sphere_nu))');
-model.param.set('shear_wave_speed', 'sqrt(shear_modulus/sphere_density)*0.95');
-model.param.set('ratio_impact_wave', 'velocity/shear_wave_speed');
-model.param.set('Phi', 'ratio_impact_wave/delta', 'value of the transtion parameter elastic to inertial');
-model.param.set('pressure_scale', 'sphere_density*velocity^2/delta'); %pressure scale from the scaling
-model.param.set('disp_scale', '0.02[mm]');
-model.param.set('h_center', 'sphere_radius*delta^2', 'Height of dimple in the inertial regime');
-model.param.set('time_scale', 'delta^2', 'Time scale in the inertial regime');
-model.param.set('c_p', 'sqrt(sphere_E/(3*(1-sphere_nu)*sphere_density))', 'P-wave velocity in the impactor');
-model.param.set('psi', 'velocity/(delta*c_p)', );
 model.param.set('vertical_ref', vertical_ref, 'minimum size of edge');
 model.param.set('radial_ref', radial_ref, 'minimum size of edge');
+
+% Derived parameters and scaling
+model.param.set('G_i', 'sphere_E/(2*(1+nu_i))');
+model.param.set('c_s', 'sqrt(G_i/rho_i)*0.95', 'Shear wave velocity');
+model.param.set('c_p', 'sqrt(sphere_E/(3*(1-nu_i)*rho_i))', 'P-wave velocity in the impactor');
+model.param.set('ratio_impact_wave', 'velocity/c_s');
+model.param.set('Phi', 'ratio_impact_wave/delta_in', 'transition parameter elastic to inertial');
+model.param.set('psi', 'velocity/(delta_in*c_p)', 'transition parameter inertial to solid compressibility' );
+model.param.set('delta_in', '(12*mu_m/(rho_i*velocity*radius))^(1/3)', 'small parameter inertial regime');
+model.param.set('delta_el', '(velocity*12*mu_m/(G_i*radius))^(1/5)', 'small parameter elastic regime');
+
+model.param.set('l_inertial', 'radius*delta_in', 'horizontal scale in the radial direction inertial regime');
+model.param.set('l_elastic', 'radius*delta_el', 'horizontal scale in the radial direction inertial regime');
+model.param.set('h_inertial', 'radius*delta_in^2', 'Height of dimple in the inertial regime');
+model.param.set('h_elastic', 'radius*delta_el^2', 'Height of dimple in the elastic regime');
+model.param.set('p_inertial', 'rho_i*velocity^2/delta_in', 'inertial pressure scale'); 
+model.param.set('p_elastic', 'G_i*h_elastic/l_elastic', 'elastic pressure scale');
+model.param.set('tau_inertial', 'h_inertial/velocity', 'inertial time scale');
+model.param.set('tau_elastic', 'h_elastic/velocity', 'elastic time scale');
+model.param.set('elasticity_parameter', '4*(1-nu_i^2)/(3.14*sphere_E)*mu_m*velocity*radius^(3/2)/h0^(5/2)');
+
+% change to have good cfl if wave speed smaller than bc speed
+model.param.set('disp_scale', '0.02[mm]');
+model.param.set('pressure_scale', 'rho_i*velocity^2/delta_in'); %pressure scale from the scaling
 
 % Geometry
 
@@ -88,9 +86,9 @@ geom1.axisymmetric(true);
 geom1.label('Ball');
 geom1.lengthUnit('mm');
 geom1.create('c1', 'Circle');
-geom1.feature('c1').set('pos', {'0' 'h0+sphere_radius'});
+geom1.feature('c1').set('pos', {'0' 'h0+radius'});
 geom1.feature('c1').set('rot', 270);
-geom1.feature('c1').set('r', 'sphere_radius');
+geom1.feature('c1').set('r', 'radius');
 geom1.feature('c1').set('angle', 180);
 geom1.create('pare1', 'PartitionEdges');
 geom1.feature('pare1').setIndex('param', num2str(radial_ref), 0);
@@ -129,9 +127,9 @@ quad_mesh.feature('dis2').selection.set([4]);
 mesh1.feature('size').set('hauto', 4);
 mesh1.feature('size').set('table', 'cfd');
 quad_mesh.feature('dis1').label('vertical_refinement');
-quad_mesh.feature('dis1').set('numelem', 'floor(sphere_radius*vertical_ref/mesh_size)');
+quad_mesh.feature('dis1').set('numelem', 'floor(radius*vertical_ref/mesh_size)');
 quad_mesh.feature('dis2').label('radial_refinement');
-quad_mesh.feature('dis2').set('numelem', 'floor(3.14*sphere_radius*(1-radial_ref)/(2*mesh_size))');
+quad_mesh.feature('dis2').set('numelem', 'floor(3.14*radius*(1-radial_ref)/(2*mesh_size))');
 mesh1.run; % Generate mesh
 
 model.result.table('tbl1').comments('Line Minimum 1');
@@ -146,9 +144,9 @@ linear_elasticity = solid.feature('lemm1');
 linear_elasticity.set('E_mat', 'userdef');
 linear_elasticity.set('E', 'sphere_E');
 linear_elasticity.set('nu_mat', 'userdef');
-linear_elasticity.set('nu', 'sphere_nu');
+linear_elasticity.set('nu', 'nu_i');
 linear_elasticity.set('rho_mat', 'userdef');
-linear_elasticity.set('rho', 'sphere_density');
+linear_elasticity.set('rho', 'rho_i');
 %initial condition solid
 solid.feature('init1').set('ut', {'0'; '0'; '-velocity'});
 solid.feature('init1').label('Initial_velocity');
@@ -161,9 +159,9 @@ solid.feature('hmm1').set('IsotropicOption', 'Enu');
 solid.feature('hmm1').set('E_mat', 'userdef');
 solid.feature('hmm1').set('E', 'sphere_E');
 solid.feature('hmm1').set('nu_mat', 'userdef');
-solid.feature('hmm1').set('nu', 'sphere_nu');
+solid.feature('hmm1').set('nu', 'nu_i');
 solid.feature('hmm1').set('rho_mat', 'userdef');
-solid.feature('hmm1').set('rho', 'sphere_density');
+solid.feature('hmm1').set('rho', 'rho_i');
 
 if neohookean == 0
     solid.feature('hmm1').active(false); % deactivate neohookean model
@@ -176,13 +174,13 @@ solid.feature('bndl1').label('Fluid_pressure_acting_on_ball');
 film.prop('EquationForm').set('form', 'Transient');
 film.prop('ReferencePressure').set('pref', '0[atm]');
 thin_film = film.feature('ffp1');
-thin_film.set('hw1', 'sphere_radius + h0 -sqrt(sphere_radius^2- r^2)');
+thin_film.set('hw1', 'radius + h0 -sqrt(radius^2- r^2)');
 thin_film.set('TangentialWallVelocity', 'FromDeformation');
 thin_film.set('uw_src', 'root.comp1.u');
 thin_film.set('mure_mat', 'userdef');
-thin_film.set('mure', 'fluid_mu');
+thin_film.set('mure', 'mu_m');
 thin_film.set('rho_mat', 'userdef');
-thin_film.set('rho', 'fluid_density');
+thin_film.set('rho', 'rho_m');
 
 % Study and solver
 study1 = model.study.create('std1');
@@ -255,15 +253,15 @@ sol1.feature('t1').feature('fc1').set('dtech', 'auto');
 sol1.feature('t1').feature('fc1').set('maxiter', 25);
 sol1.feature('t1').feature('fc1').set('termonres', true);
 
-%Stop conditions if gap is smaller than 100nm or timestep 1ns 
+%Stop conditions if contact is made (less than 1nm gap) or timestep 1ns 
 sol1.feature('t1').feature('st1').label('Stop Condition 1.1');
 sol1.feature('t1').feature('st1').set('stopcondterminateon', {'true' 'true'});
 sol1.feature('t1').feature('st1').set('stopcondActive', {'on' 'on'});
 sol1.feature('t1').feature('st1').set('stopconddesc', {'Stop if times step is too small' 'Stop if gap is smaller than 100nm'});
-sol1.feature('t1').feature('st1').set('stopcondarr', {'1/timestep > 1e12' 'comp1.minop1(root.z) < 1e-7 [m]'});
+sol1.feature('t1').feature('st1').set('stopcondarr', {'1/timestep > 1e12' 'comp1.minop1(root.z) < 1e-9 [m]'});
 sol1.feature('t1').feature('st1').set('storestopcondsol', 'stepafter');
 % Save file
-mphsave(model_name, strcat("\Automated_simulations\",name, "_ms.mph"))
+mphsave(model_name, strcat("\Automated_simulations\",name, ".mph"))
 
 % Solve command
 sol1.runAll;
@@ -307,7 +305,7 @@ tip_plot1.set('linemarker', 'cycle');
 tip_plot1.set('legend', true);
 tip_plot1.set('resolution', 'normal');
 
-data_folder = strcat(path,'\Automated_data_lower_drop\',name);
+data_folder = strcat(path,'\Automated_data\',name);
 [status, msg, msgID] = mkdir(data_folder);
 
 tip_data = mphplot(model, 'tip_bw', 'rangenum', 1,'createplot','off');
@@ -446,6 +444,108 @@ tip_profile2.feature('lngr1').set('linewidth', 3);
 tip_profile2.feature('lngr1').set('legend', true);
 tip_profile2.feature('lngr1').set('resolution', 'normal');
 
+% elastic scaling 
+tip_profile_elastic = model.result.create('tip_profile_elastic', 'PlotGroup1D');
+tip_profile_elastic.create('lngr1', 'LineGraph');
+tip_profile_elastic.feature('lngr1').set('xdata', 'expr');
+tip_profile_elastic.feature('lngr1').selection.set([4]);
+tip_profile_elastic.feature('lngr1').set('expr', 'z/h_elastic');
+tip_profile_elastic.label('Tip profile elastic');
+tip_profile_elastic.set('looplevelinput', {'manual'});
+tip_profile_elastic.set('looplevelinput', {'interp'});
+tip_profile_elastic.set('interp', {'range(-time_to_impact, tau_elastic, total_time)'});
+tip_profile_elastic.set('titletype', 'manual');
+tip_profile_elastic.set('title', ['Elastic dimensionless profile']);
+tip_profile_elastic.set('xlabel', 'r/L_el');
+tip_profile_elastic.set('ylabel', 'z/H_el');
+tip_profile_elastic.set('ylog', true);
+tip_profile_elastic.set('xlabelactive', false);
+tip_profile_elastic.set('ylabelactive', false);
+tip_profile_elastic.feature('lngr1').set('const', {'solid.refpntr' '0' 'Reference point for moment computation, r coordinate'; 'solid.refpntphi' '0' 'Reference point for moment computation, phi coordinate'; 'solid.refpntz' '0' 'Reference point for moment computation, z coordinate'});
+tip_profile_elastic.feature('lngr1').set('xdataexpr', 'if(r<1.5[mm],r/l_elastic,none)');
+tip_profile_elastic.feature('lngr1').set('xdataunit', '');
+tip_profile_elastic.feature('lngr1').set('xdatadescractive', true);
+tip_profile_elastic.feature('lngr1').set('xdatadescr', 'r/L_el');
+tip_profile_elastic.feature('lngr1').set('linewidth', 3);
+tip_profile_elastic.feature('lngr1').set('legend', true);
+tip_profile_elastic.feature('lngr1').set('resolution', 'normal');
+
+pressure_profile_elastic = model.result.create('pressure_profile_elastic', 'PlotGroup1D');
+pressure_profile_elastic.create('lngr1', 'LineGraph');
+pressure_profile_elastic.feature('lngr1').set('xdata', 'expr');
+pressure_profile_elastic.feature('lngr1').selection.set([4]);
+pressure_profile_elastic.feature('lngr1').set('expr', 'tffs.p/p_elastic');
+pressure_profile_elastic.label('Pressure profile elastic');
+pressure_profile_elastic.set('looplevelinput', {'manual'});
+pressure_profile_elastic.set('looplevelinput', {'interp'});
+pressure_profile_elastic.set('interp', {'range(-time_to_impact, tau_elastic, total_time)'});
+pressure_profile_elastic.set('titletype', 'manual');
+pressure_profile_elastic.set('title', ['Elastic dimensionless profile']);
+pressure_profile_elastic.set('xlabel', 'r/L_el');
+pressure_profile_elastic.set('ylabel', 'z/H_el');
+pressure_profile_elastic.set('xlabelactive', false);
+pressure_profile_elastic.set('ylabelactive', false);
+pressure_profile_elastic.feature('lngr1').set('const', {'solid.refpntr' '0' 'Reference point for moment computation, r coordinate'; 'solid.refpntphi' '0' 'Reference point for moment computation, phi coordinate'; 'solid.refpntz' '0' 'Reference point for moment computation, z coordinate'});
+pressure_profile_elastic.feature('lngr1').set('xdataexpr', 'if(r<1.5[mm],r/l_elastic,none)');
+pressure_profile_elastic.feature('lngr1').set('xdataunit', '');
+pressure_profile_elastic.feature('lngr1').set('xdatadescractive', true);
+pressure_profile_elastic.feature('lngr1').set('xdatadescr', 'r/L_el');
+pressure_profile_elastic.feature('lngr1').set('linewidth', 3);
+pressure_profile_elastic.feature('lngr1').set('legend', true);
+pressure_profile_elastic.feature('lngr1').set('resolution', 'normal');
+
+
+% inertial scaling 
+tip_profile_inertial = model.result.create('tip_profile_inertial', 'PlotGroup1D');
+tip_profile_inertial.create('lngr1', 'LineGraph');
+tip_profile_inertial.feature('lngr1').set('xdata', 'expr');
+tip_profile_inertial.feature('lngr1').selection.set([4]);
+tip_profile_inertial.feature('lngr1').set('expr', 'z/h_inertial');
+tip_profile_inertial.label('Tip profile inertial');
+tip_profile_inertial.set('looplevelinput', {'manual'});
+tip_profile_inertial.set('looplevelinput', {'interp'});
+tip_profile_inertial.set('interp', {'range(-time_to_impact, tau_inertial, total_time)'});
+tip_profile_inertial.set('titletype', 'manual');
+tip_profile_inertial.set('title', ['Elastic dimensionless profile']);
+tip_profile_inertial.set('xlabel', 'r/L_in');
+tip_profile_inertial.set('ylabel', 'z/H_in');
+tip_profile_inertial.set('ylog', true);
+tip_profile_inertial.set('xlabelactive', false);
+tip_profile_inertial.set('ylabelactive', false);
+tip_profile_inertial.feature('lngr1').set('const', {'solid.refpntr' '0' 'Reference point for moment computation, r coordinate'; 'solid.refpntphi' '0' 'Reference point for moment computation, phi coordinate'; 'solid.refpntz' '0' 'Reference point for moment computation, z coordinate'});
+tip_profile_inertial.feature('lngr1').set('xdataexpr', 'if(r<1.5[mm],r/l_inertial,none)');
+tip_profile_inertial.feature('lngr1').set('xdataunit', '');
+tip_profile_inertial.feature('lngr1').set('xdatadescractive', true);
+tip_profile_inertial.feature('lngr1').set('xdatadescr', 'r/L_in');
+tip_profile_inertial.feature('lngr1').set('linewidth', 3);
+tip_profile_inertial.feature('lngr1').set('legend', true);
+tip_profile_inertial.feature('lngr1').set('resolution', 'normal');
+
+pressure_profile_inertial = model.result.create('pressure_profile_inertial', 'PlotGroup1D');
+pressure_profile_inertial.create('lngr1', 'LineGraph');
+pressure_profile_inertial.feature('lngr1').set('xdata', 'expr');
+pressure_profile_inertial.feature('lngr1').selection.set([4]);
+pressure_profile_inertial.feature('lngr1').set('expr', 'tffs.p/p_inertial');
+pressure_profile_inertial.label('Pressure profile inertial');
+pressure_profile_inertial.set('looplevelinput', {'manual'});
+pressure_profile_inertial.set('looplevelinput', {'interp'});
+pressure_profile_inertial.set('interp', {'range(-time_to_impact, tau_inertial, total_time)'});
+pressure_profile_inertial.set('titletype', 'manual');
+pressure_profile_inertial.set('title', ['Elastic dimensionless profile']);
+pressure_profile_inertial.set('xlabel', 'r/L_in');
+pressure_profile_inertial.set('ylabel', 'z/H_in');
+pressure_profile_inertial.set('xlabelactive', false);
+pressure_profile_inertial.set('ylabelactive', false);
+pressure_profile_inertial.feature('lngr1').set('const', {'solid.refpntr' '0' 'Reference point for moment computation, r coordinate'; 'solid.refpntphi' '0' 'Reference point for moment computation, phi coordinate'; 'solid.refpntz' '0' 'Reference point for moment computation, z coordinate'});
+pressure_profile_inertial.feature('lngr1').set('xdataexpr', 'if(r<1.5[mm],r/l_inertial,none)');
+pressure_profile_inertial.feature('lngr1').set('xdataunit', '');
+pressure_profile_inertial.feature('lngr1').set('xdatadescractive', true);
+pressure_profile_inertial.feature('lngr1').set('xdatadescr', 'r/L_in');
+pressure_profile_inertial.feature('lngr1').set('linewidth', 3);
+pressure_profile_inertial.feature('lngr1').set('legend', true);
+pressure_profile_inertial.feature('lngr1').set('resolution', 'normal');
+
+
 pressure_profile2 = model.result.create('pressure_profile_color', 'PlotGroup1D');
 pressure_profile2.create('lngr1', 'LineGraph');
 pressure_profile2.feature('lngr1').set('xdata', 'expr');
@@ -471,7 +571,7 @@ pressure_profile2.feature('lngr1').set('legend', true);
 pressure_profile2.feature('lngr1').set('resolution', 'normal');
 
 %gifs path
-data_path = strcat("\Automated_data_lower_drop\", name, '_ms');
+data_path = strcat("\Automated_data\", name);
 
 % Pressure profile evolution 
 gif1.label('Pressure_gif');
@@ -568,13 +668,18 @@ gif3.set('axes1d', 'on');
 gif3.set('axes2d', 'on');
 gif3.set('showgrid', 'off');
 
+
+%Save file
+mphsave(model_name, strcat("\Automated_simulations\", name, ".mph"))
+
 % exporting data for postprocessing
 count = 0;
 r_min = zeros(1,n_times);
 figure()
 for i=1:n_times
     [coor, idx] = sort(tip_data{1}{i}.p);
-    times(i) = str2num(tip_data{1}{1}.legend{i}(1:end-2));
+    index_s = strfind(tip_data{1}{1}.legend{i}, 's');
+    times(i) = str2double(tip_data{1}{1}.legend{i}(1:index_s-1));
     writematrix(coor',strcat(data_folder,'\coor',num2str(i),'.txt'),'Delimiter','tab')
     writematrix(tip_data{1}{i}.d(idx),strcat(data_folder,'\tip',num2str(i),'.txt'),'Delimiter','tab')
 
@@ -604,8 +709,6 @@ writematrix(r_min',strcat(data_folder,'\r_min.txt'),'Delimiter','tab')
 figure()
 plot(times,r_min)
 
-%Save file
-mphsave(model_name, strcat("\Automated_simulations\", name, "_ms.mph"))
 
 end
 

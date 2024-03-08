@@ -53,3 +53,11 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+# outputs
+*.txt
+*.mph
+*.mph.lock
+
+# Folders with data in output
+Automated_data*
+Automated_figures*
